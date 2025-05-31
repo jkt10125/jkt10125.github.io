@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Jay Kumar Thakur</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100;200;300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --gruvbox-bg: #282828;
+      --gruvbox-fg: #ebdbb2;
+      --gruvbox-accent: #fabd2f;
+      --gruvbox-soft-accent: #fe8019;
+      --gruvbox-muted: #928374;
+      --gruvbox-border: #3c3836;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      min-height: 100vh;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      background-color: var(--gruvbox-bg);
+      color: var(--gruvbox-fg);
+    }
+
+    .big-j::first-letter {
+      font-size: 7rem;
+      line-height: 0.8;
+      display: inline-block;
+      vertical-align: bottom;
+      position: relative;
+      top: 20px;
+      color: var(--gruvbox-accent);
+    }
+
+    a {
+      color: var(--gruvbox-accent);
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    #typewriter-text {
+      color: var(--gruvbox-accent);
+    }
+  </style>
+</head>
+<body class="flex flex-col min-h-screen text-[--gruvbox-fg]">
+
+  <main class="flex-grow flex flex-col items-center justify-center px-4 relative">
+    <div class="relative text-center w-max" id="container">
+      <h1 class="big-j text-6xl font-bold whitespace-nowrap" id="name">
+        JAY KUMAR THAKUR
+      </h1>
+
+      <!-- Navigation with fixed typewriter and cursor -->
+      <div id="nav-container" class="mt-0 flex justify-end items-center space-x-4 text-lg font-light relative z-20">
+
+        <!-- Typewriter container with fixed muted cursor -->
+        <div class="flex items-center relative h-6 w-[320px] justify-end pr-3 overflow-hidden">
+          <span id="typewriter-text" class="absolute right-6 whitespace-nowrap"></span>
+          <span class="absolute right-0 select-none text-[--gruvbox-muted]">|</span>
+        </div>
+
+        <!-- Schedule link -->
+        <a href="schedule.html" class="whitespace-nowrap">Schedule</a>
+
+      </div>
+    </div>
+  </main>
+
+  <footer class="w-full border-t py-1 text-[--gruvbox-muted] flex justify-end px-4"
+          style="border-color: var(--gruvbox-border); font-family: Consolas, monospace; font-size: 10px;">
+    Last updated on 29 May 2025
+  </footer>
+
+  <script>
+    const lines = [
+      "Competitive Programmer",
+      "Badminton and Chess Player",
+      "Software Developer"
+    ];
+
+    const textElem = document.getElementById("typewriter-text");
+    let currentLine = 0;
+    let charIndex = 0;
+    let direction = "in";
+    let delayAfterFull = 1000;
+    let delayBetweenLines = 500;
+    let typingSpeed = 50;
+
+    function type() {
+      const line = lines[currentLine];
+      if (direction === "in") {
+        if (charIndex <= line.length) {
+          textElem.textContent = line.slice(line.length - charIndex);
+          charIndex++;
+          setTimeout(type, typingSpeed);
+        } else {
+          setTimeout(() => {
+            direction = "out";
+            setTimeout(type, typingSpeed);
+          }, delayAfterFull);
+        }
+      } else if (direction === "out") {
+        if (charIndex > 0) {
+          charIndex--;
+          textElem.textContent = line.slice(line.length - charIndex);
+          setTimeout(type, typingSpeed);
+        } else {
+          currentLine = (currentLine + 1) % lines.length;
+          direction = "in";
+          setTimeout(type, delayBetweenLines);
+        }
+      }
+    }
+
+    type();
+  </script>
+
+</body>
+</html>

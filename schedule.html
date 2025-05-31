@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Schedule - Public View</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getFirestore,
+      collection,
+      query,
+      where,
+      getDocs
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", 
+                          "Thursday", "Friday", "Saturday"];
+
+    function formatDate(dateStr) {
+      const [year, month, day] = dateStr.split("-").map(Number);
+      const dateObj = new Date(year, month - 1, day);
+      return `${weekdayNames[dateObj.getDay()]}, ${String(day).padStart(2, '0')}-${monthNames[month - 1]}-${year}`;
+    }
+
+    function getTimeDifference(dateStr, timeStr) {
+      const now = new Date();
+      const eventDate = new Date(`${dateStr}T${timeStr}:00`);
+      const diffMs = eventDate - now;
+      const diffSec = Math.floor(diffMs / 1000);
+      const absSec = Math.abs(diffSec);
+      const minutes = Math.floor(absSec / 60);
+      const hours = Math.floor(minutes / 60);
+      const days = Math.floor(hours / 24);
+
+      if (diffSec > 0) {
+        if (days > 0) return `Starts in ${days} day${days > 1 ? 's' : ''}`;
+        if (hours > 0) return `Starts in ${hours} hour${hours > 1 ? 's' : ''}`;
+        return `Starts in ${minutes} minute${minutes > 1 ? 's' : ''}`;
+      } else {
+        if (days > 0) return `Finished ${days} day${days > 1 ? 's' : ''} ago`;
+        if (hours > 0) return `Finished ${hours} hour${hours > 1 ? 's' : ''} ago`;
+        return `Finished ${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+      }
+    }
+
+    async function loadSchedule(db) {
+      try {
+        const scheduleRef = collection(db, "schedule");
+        const q = query(scheduleRef, where("visibility", "==", true));
+        const querySnapshot = await getDocs(q);
+
+        const now = new Date();
+        const todayStr = now.toISOString().split("T")[0];
+
+        const events = [];
+        querySnapshot.forEach(doc => {
+          const data = doc.data();
+          const eventDateTime = new Date(`${data.date}T${data.time}:00`);
+          events.push({ ...data, eventDateTime });
+        });
+
+        // Step 1: Sort events by ascending (date + time)
+        events.sort((a, b) => a.eventDateTime - b.eventDateTime);
+
+        // Step 2: Separate into past and upcoming
+        const past = events.filter(e => e.eventDateTime <= now);
+        const upcoming = events.filter(e => e.eventDateTime > now);
+
+        // Step 3: Select most recent 2 past events
+        const finalPast = [];
+        if (past.length > 0) {
+          const reversed = [...past].reverse();
+          const firstTwo = reversed.slice(0, 2);
+          finalPast.push(...firstTwo);
+
+          for (let i = 2; i < reversed.length; i++) {
+            const e = reversed[i];
+            if (e.date === todayStr) {
+              finalPast.push(e);
+            } else {
+              break;
+            }
+          }
+        }
+
+        // Step 4: Sort final past events back to chronological order
+        finalPast.sort((a, b) => a.eventDateTime - b.eventDateTime);
+        upcoming.sort((a, b) => a.eventDateTime - b.eventDateTime);
+
+        // Step 5: Display all
+        const eventContainer = document.getElementById("event-container");
+        eventContainer.innerHTML = "";
+
+        const renderEvent = (event, isPast) => {
+          const div = document.createElement("div");
+          div.className = `
+            ${isPast ? 'opacity-50' : ''}
+            bg-[#3c3836] shadow px-4 py-3 mb-4 rounded-md
+            min-w-[320px] sm:min-w-[500px] max-w-full
+          `.trim();
+          div.style.width = "100%";
+          div.innerHTML = `
+            <h3 class="text-xl font-semibold text-[--gruvbox-fg]">${event.heading}</h3>
+            <p class="text-sm text-[--gruvbox-muted]">${formatDate(event.date)} | ${event.time} hrs</p>
+            <p class="text-sm italic mb-2 text-[--gruvbox-muted]">${getTimeDifference(event.date, event.time)}</p>
+            <p class="text-[--gruvbox-fg]">${event.description}</p>
+          `;
+          eventContainer.appendChild(div);
+        };
+
+        finalPast.forEach(e => renderEvent(e, true));
+        upcoming.forEach(e => renderEvent(e, false));
+
+      } catch (err) {
+        console.error("Error fetching schedule:", err);
+      }
+    }
+
+    // Fetch Firebase config from JSON and initialize app
+    window.addEventListener('load', async () => {
+      try {
+        const response = await fetch('firebase-config.json');
+        const firebaseConfig = await response.json();
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        await loadSchedule(db);
+      } catch (err) {
+        console.error("Failed to initialize Firebase:", err);
+      }
+    });
+  </script>
+
+
+  <style>
+    :root {
+      --gruvbox-bg: #282828;
+      --gruvbox-fg: #ebdbb2;
+      --gruvbox-muted: #928374;
+      --gruvbox-border: #3c3836;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background-color: var(--gruvbox-bg);
+      color: var(--gruvbox-fg);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col text-[--gruvbox-fg] bg-[--gruvbox-bg]">
+  <a href="admin.html" class="fixed top-4 left-4 text-[--gruvbox-fg] hover:text-white font-semibold underline z-50">
+    Admin Login
+  </a>
+  <a href="index.html" class="fixed top-4 right-4 text-[--gruvbox-fg] hover:text-white font-semibold underline z-50">
+    ← Go Back
+  </a>
+
+  <main class="flex-grow max-w-3xl mx-auto px-4 py-8">
+    <h1 class="text-4xl font-bold text-center mb-8 text-[--gruvbox-fg]">Event Schedule</h1>
+    <div id="event-container" class="flex flex-col items-center"></div>
+  </main>
+
+  <footer
+    id="footer"
+    class="w-full border-t border-[#504945] py-1 flex justify-end px-4"
+    style="font-family: Consolas, monospace; font-size: 10px; position: fixed; bottom: 0; left: 0; background-color: #282828; color: #ebdbb2; z-index: 50;"
+  >
+    Loading...
+  </footer>
+
+<script>
+  window.addEventListener('load', () => {
+    const footer = document.getElementById('footer');
+    const now = new Date();
+    const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
+    const formattedTimestamp = now.toLocaleString('en-US', options);
+    footer.textContent = `Last updated: ${formattedTimestamp} · Public View`;
+  });
+</script>
+
+</body>
+</html>
