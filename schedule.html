@@ -47,6 +47,8 @@
       }
     }
 
+    let currentFilterDate = null;
+
     async function loadSchedule(db) {
       try {
         const scheduleRef = collection(db, "schedule");
@@ -66,13 +68,19 @@
         // Step 1: Sort events by ascending (date + time)
         events.sort((a, b) => a.eventDateTime - b.eventDateTime);
 
-        // Step 2: Separate into past and upcoming
-        const past = events.filter(e => e.eventDateTime <= now);
-        const upcoming = events.filter(e => e.eventDateTime > now);
+        // Step 2: If filter is applied, filter events by that date only
+        let filteredEvents = events;
+        if (currentFilterDate) {
+          filteredEvents = events.filter(e => e.date === currentFilterDate);
+        }
 
-        // Step 3: Select most recent 2 past events
-        const finalPast = [];
-        if (past.length > 0) {
+        // Step 3: Separate into past and upcoming
+        const past = filteredEvents.filter(e => e.eventDateTime <= now);
+        const upcoming = filteredEvents.filter(e => e.eventDateTime > now);
+
+        // Step 4: Select most recent 2 past events (only if no filter applied)
+        let finalPast = [];
+        if (!currentFilterDate && past.length > 0) {
           const reversed = [...past].reverse();
           const firstTwo = reversed.slice(0, 2);
           finalPast.push(...firstTwo);
@@ -85,13 +93,15 @@
               break;
             }
           }
+          finalPast.sort((a, b) => a.eventDateTime - b.eventDateTime);
+        } else {
+          // If filtered by date, show all matching events (past or upcoming)
+          finalPast = past;
         }
 
-        // Step 4: Sort final past events back to chronological order
-        finalPast.sort((a, b) => a.eventDateTime - b.eventDateTime);
         upcoming.sort((a, b) => a.eventDateTime - b.eventDateTime);
 
-        // Step 5: Display all
+        // Step 5: Display events
         const eventContainer = document.getElementById("event-container");
         eventContainer.innerHTML = "";
 
@@ -115,25 +125,67 @@
         finalPast.forEach(e => renderEvent(e, true));
         upcoming.forEach(e => renderEvent(e, false));
 
+        updateFilterButtons();
+
       } catch (err) {
-        console.error("Error fetching schedule:", err);
+        console.error("Error loading schedule:", err);
+        const eventContainer = document.getElementById("event-container");
+        eventContainer.innerHTML = `<p class="text-red-500">Failed to load schedule. Please try again later.</p>`;
       }
     }
 
-    // Fetch Firebase config from JSON and initialize app
+    // Update the visibility of filter buttons based on currentFilterDate
+    function updateFilterButtons() {
+      const filterBtn = document.getElementById("open-filter-btn");
+      const activeFilterBtn = document.getElementById("active-filter-btn");
+
+      if (currentFilterDate) {
+        filterBtn.classList.add("hidden");
+        activeFilterBtn.classList.remove("hidden");
+        activeFilterBtn.querySelector(".filter-date").textContent = formatDate(currentFilterDate);
+      } else {
+        filterBtn.classList.remove("hidden");
+        activeFilterBtn.classList.add("hidden");
+      }
+    }
+
+    // On DOM loaded, setup event listeners
     window.addEventListener('load', async () => {
       try {
         const response = await fetch('firebase-config.json');
         const firebaseConfig = await response.json();
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+
+        const applyFilterBtn = document.getElementById("apply-filter-btn");
+        const filterDateInput = document.getElementById("filter-date-input");
+        const clearFilterBtn = document.getElementById("clear-filter-btn");
+
+        applyFilterBtn.addEventListener("click", () => {
+          const selectedDate = filterDateInput.value;
+          if (!selectedDate) {
+            alert("Please select a date first");
+            return;
+          }
+          currentFilterDate = selectedDate;
+          loadSchedule(db);
+        });
+
+        clearFilterBtn.addEventListener("click", () => {
+          currentFilterDate = null;
+          filterDateInput.value = "";
+          loadSchedule(db);
+        });
+
         await loadSchedule(db);
+
       } catch (err) {
-        console.error("Failed to initialize Firebase:", err);
+        console.error("Error loading schedule:", err);
+        const eventContainer = document.getElementById("event-container");
+        eventContainer.innerHTML = `<p class="text-red-500">Failed to load schedule. Please try again later.</p>`;
       }
     });
   </script>
-
 
   <style>
     :root {
@@ -160,6 +212,36 @@
 
   <main class="flex-grow max-w-3xl mx-auto px-4 py-8">
     <h1 class="text-4xl font-bold text-center mb-8 text-[--gruvbox-fg]">Event Schedule</h1>
+
+    <!-- Filter Buttons -->
+    <div class="mb-6 flex justify-center gap-4">
+      <!-- Button to open date picker -->
+      <div id="open-filter-btn" class="flex items-center gap-2">
+        <input
+          id="filter-date-input"
+          type="date"
+          class="rounded px-2 py-1 bg-[#3c3836] border border-[#504945] text-[--gruvbox-fg]"
+          aria-label="Select date to filter"
+        />
+        <button
+          id="apply-filter-btn"
+          class="bg-[#458588] hover:bg-[#689d6a] text-white px-3 py-1 rounded font-semibold"
+        >
+          Apply Filter
+        </button>
+      </div>
+
+      <!-- Button showing active filter -->
+      <button
+        id="active-filter-btn"
+        class="hidden flex items-center gap-2 bg-[#d65d0e] hover:bg-[#e5786d] text-white px-3 py-1 rounded font-semibold"
+        aria-label="Clear filter"
+      >
+        <span>Filter: <span class="filter-date font-mono"></span></span>
+        <span id="clear-filter-btn" class="cursor-pointer font-bold text-xl leading-none select-none">×</span>
+      </button>
+    </div>
+
     <div id="event-container" class="flex flex-col items-center"></div>
   </main>
 
@@ -171,15 +253,15 @@
     Loading...
   </footer>
 
-<script>
-  window.addEventListener('load', () => {
-    const footer = document.getElementById('footer');
-    const now = new Date();
-    const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
-    const formattedTimestamp = now.toLocaleString('en-US', options);
-    footer.textContent = `Last updated: ${formattedTimestamp} · Public View`;
-  });
-</script>
+  <script>
+    window.addEventListener('load', () => {
+      const footer = document.getElementById('footer');
+      const now = new Date();
+      const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
+      const formattedTimestamp = now.toLocaleString('en-US', options);
+      footer.textContent = `Last updated: ${formattedTimestamp} · Public View`;
+    });
+  </script>
 
 </body>
 </html>
