@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Memo Viewer</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<style>
+  :root {
+    --gruvbox-bg: #282828; --gruvbox-fg: #ebdbb2; --gruvbox-accent: #fabd2f;
+    --gruvbox-soft-accent: #fe8019; --gruvbox-muted: #928374; --gruvbox-border: #3c3836;
+    --gruvbox-error: #fb4934;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0; font-family: 'JetBrains Mono', monospace;
+    background: var(--gruvbox-bg); color: var(--gruvbox-fg);
+    height: 100vh; display: flex; overflow: hidden;
+  }
+  #sidebar {
+    background: var(--gruvbox-border); border-right: 1px solid var(--gruvbox-border);
+    width: 25vw; min-width: 200px; max-width: 400px;
+    display: flex; flex-direction: column; padding: 1rem;
+    transition: width 0.3s, padding 0.3s; overflow-y: auto; position: relative;
+  }
+  #sidebar.collapsed {
+    width: 2.5rem !important; min-width: 2.5rem !important; padding: 0 !important; overflow: hidden !important;
+  }
+  #sidebarHeading {
+    font-size: 1.5rem; font-weight: 700; margin-bottom: 0.75rem; white-space: nowrap;
+    color: var(--gruvbox-fg);
+  }
+  #sidebarHeading.collapsed { display: none; }
+  #searchBox { margin-bottom: 0.75rem; }
+  #searchBox.collapsed { display: none; }
+  #searchInput {
+    width: 100%; padding: 0.3rem 0.5rem; border-radius: 4px; border: none;
+    font-family: inherit; font-size: 1rem; background: #504945; color: var(--gruvbox-fg);
+  }
+  #searchInput::placeholder { color: var(--gruvbox-muted); }
+  #searchInput:focus { outline: 2px solid var(--gruvbox-accent); }
+  #memoList {
+    list-style: none; margin: 0; padding: 0; overflow-y: auto; flex-grow: 1;
+  }
+  #memoList.collapsed { display: none; }
+  #memoList li {
+    padding: 0.3rem 0.4rem; cursor: pointer; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; border-radius: 3px;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  #memoList li:hover {
+    background: var(--gruvbox-soft-accent); color: var(--gruvbox-bg);
+  }
+  #memoList li.selected {
+    background: var(--gruvbox-accent); color: var(--gruvbox-bg);
+  }
+  #memoList li span.number {
+    color: var(--gruvbox-muted); flex-shrink: 0; width: 1.3em; text-align: right;
+  }
+  #collapseBtn, #expandBtn {
+    cursor: pointer; background: none; border: none; color: var(--gruvbox-muted);
+    font-size: 1.25rem; padding: 0.25rem; margin-top: 0.25rem; transition: color 0.2s;
+    user-select: none;
+  }
+  #collapseBtn:hover, #expandBtn:hover { color: var(--gruvbox-accent); }
+  #expandBtn {
+    display: none; position: absolute; top: 0.5rem; left: 0.2rem;
+  }
+  #content {
+    flex-grow: 1; padding: 1rem 1.5rem; overflow-y: auto; background: var(--gruvbox-bg);
+    display: flex; flex-direction: column; position: relative;
+  }
+  #backLink {
+    position: absolute; right: 1.5rem; text-decoration: underline; font-weight: bold;
+    color: var(--gruvbox-muted); font-size: 1rem; transition: color 0.2s; top: 1rem;
+  }
+  #backLink:hover { color: var(--gruvbox-accent); }
+  #contentHeading {
+    text-align: center; font-size: 1.8rem; font-weight: 700; margin-bottom: 1rem;
+    color: var(--gruvbox-fg); word-break: break-word;
+  }
+  #adminLink {
+    position: absolute; left: 1.5rem; text-decoration: underline; font-weight: bold;
+    color: var(--gruvbox-muted); font-size: 1rem; transition: color 0.2s; top: 1rem;
+  }
+  #adminLink:hover { color: var(--gruvbox-accent); }
+
+  #fontControls {
+    margin-bottom: 1rem; display: flex; gap: 0.5rem; justify-content: center; align-items: center;
+  }
+  #fontControls label { font-size: 0.9rem; }
+  #fontSizeSelect {
+    padding: 0.2rem 0.4rem; font-family: inherit; font-size: 1rem;
+    background: #504945; border: none; color: var(--gruvbox-fg); border-radius: 4px; cursor: pointer;
+  }
+  #fontSizeSelect:focus { outline: 2px solid var(--gruvbox-accent); }
+  pre {
+    white-space: pre-wrap; word-break: break-word; background: #3c3836;
+    padding: 1rem; border-radius: 5px; color: var(--gruvbox-fg);
+    font-family: 'JetBrains Mono', monospace; overflow-x: auto; position: relative;
+  }
+  .line-numbers { counter-reset: line; }
+  .line-numbers > div {
+    counter-increment: line; padding-left: 3em; position: relative;
+  }
+  .line-numbers > div::before {
+    content: counter(line); position: absolute; left: 0; width: 2.5em; text-align: right;
+    color: var(--gruvbox-muted); user-select: none;
+    border-right: 1.5px solid var(--gruvbox-muted); padding-right: 0.5em; box-sizing: border-box; height: 100%;
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <button id="collapseBtn" title="Collapse Sidebar" aria-label="Collapse Sidebar">⬅</button>
+  <button id="expandBtn" title="Expand Sidebar" aria-label="Expand Sidebar">➡</button>
+  <h2 id="sidebarHeading">Memos</h2>
+  <div id="searchBox">
+    <input type="text" id="searchInput" placeholder="Search memos..." aria-label="Search memos" />
+  </div>
+  <ul id="memoList" tabindex="0" role="listbox" aria-label="Memo documents list"></ul>
+</div>
+
+<div id="content">
+  <a href="admin-memo.html" id="adminLink" title="Admin Login">Admin Login</a>
+  <a href="index.html" id="backLink" title="Go back to homepage">← Go Back</a>
+  <h2 id="contentHeading">Select a memo</h2>
+  <div id="fontControls" aria-label="Font size controls">
+    <label for="fontSizeSelect">Font size:</label>
+    <select id="fontSizeSelect" aria-controls="memoContent">
+      <option value="12px">12</option>
+      <option value="14px" selected>14</option>
+      <option value="16px">16</option>
+      <option value="18px">18</option>
+      <option value="20px">20</option>
+      <option value="22px">22</option>
+      <option value="24px">24</option>
+    </select>
+  </div>
+  <pre id="memoContent" class="line-numbers" aria-live="polite" tabindex="0"></pre>
+</div>
+
+<script>
+  async function loadFirebaseConfig() {
+    const res = await fetch('firebase-config.json');
+    if (!res.ok) throw new Error("Failed to load firebase-config.json");
+    return res.json();
+  }
+  function addLineNumbers(text) {
+    return text.split('\n').map(line => `<div>${line || '\u00A0'}</div>`).join('');
+  }
+  (async () => {
+    try {
+      const firebaseConfig = await loadFirebaseConfig();
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.firestore();
+
+      const sidebar = document.getElementById('sidebar');
+      const collapseBtn = document.getElementById('collapseBtn');
+      const expandBtn = document.getElementById('expandBtn');
+      const memoListEl = document.getElementById('memoList');
+      const sidebarHeading = document.getElementById('sidebarHeading');
+      const searchBox = document.getElementById('searchBox');
+      const searchInput = document.getElementById('searchInput');
+
+      const contentHeading = document.getElementById('contentHeading');
+      const memoContent = document.getElementById('memoContent');
+      const fontSizeSelect = document.getElementById('fontSizeSelect');
+
+      collapseBtn.onclick = () => {
+        sidebar.classList.add('collapsed');
+        memoListEl.classList.add('collapsed');
+        sidebarHeading.classList.add('collapsed');
+        searchBox.classList.add('collapsed');
+        collapseBtn.style.display = 'none';
+        expandBtn.style.display = 'block';
+      };
+      expandBtn.onclick = () => {
+        sidebar.classList.remove('collapsed');
+        memoListEl.classList.remove('collapsed');
+        sidebarHeading.classList.remove('collapsed');
+        searchBox.classList.remove('collapsed');
+        collapseBtn.style.display = 'block';
+        expandBtn.style.display = 'none';
+      };
+
+      fontSizeSelect.onchange = () => {
+        memoContent.style.fontSize = fontSizeSelect.value;
+      };
+
+      let memos = [];
+      let selectedId = null;
+
+      function renderMemos(filter = '') {
+        const filtered = memos.filter(memo => memo.name.toLowerCase().includes(filter.toLowerCase()));
+        memoListEl.innerHTML = filtered.map((memo, idx) => {
+          const isSelected = memo.id === selectedId;
+          return `<li role="option" aria-selected="${isSelected}" tabindex="-1" data-id="${memo.id}">
+            <span class="number">${idx + 1}</span> ${memo.name}
+          </li>`;
+        }).join('');
+        if (filtered.length) {
+          const firstItem = memoListEl.querySelector('li');
+          if (firstItem) firstItem.tabIndex = 0;
+        }
+      }
+
+      memoListEl.addEventListener('click', e => {
+        const li = e.target.closest('li');
+        if (!li) return;
+        selectMemo(li.dataset.id);
+      });
+
+      memoListEl.addEventListener('keydown', e => {
+        const items = [...memoListEl.querySelectorAll('li')];
+        const currentIndex = items.findIndex(i => i.tabIndex === 0);
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          const nextIndex = (currentIndex + 1) % items.length;
+          items[currentIndex].tabIndex = -1;
+          items[nextIndex].tabIndex = 0;
+          items[nextIndex].focus();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          const prevIndex = (currentIndex - 1 + items.length) % items.length;
+          items[currentIndex].tabIndex = -1;
+          items[prevIndex].tabIndex = 0;
+          items[prevIndex].focus();
+        } else if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          const li = items[currentIndex];
+          if (li) selectMemo(li.dataset.id);
+        }
+      });
+
+      function selectMemo(id) {
+        if (selectedId === id) return;
+        selectedId = id;
+        const selectedMemo = memos.find(m => m.id === id);
+        if (!selectedMemo) return;
+        contentHeading.textContent = selectedMemo.name;
+        memoContent.innerHTML = addLineNumbers(selectedMemo.text);
+        [...memoListEl.querySelectorAll('li')].forEach(li => {
+          li.classList.toggle('selected', li.dataset.id === id);
+          li.setAttribute('aria-selected', li.dataset.id === id);
+          li.tabIndex = -1;
+        });
+        memoContent.focus();
+      }
+
+      searchInput.addEventListener('input', e => {
+        renderMemos(e.target.value);
+      });
+
+      const snapshot = await db.collection('memo').where('visibility', '==', true).orderBy('name').get();
+      memos = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { id: doc.id, name: data.name || 'Untitled', text: data.content || '' };
+      });
+
+      renderMemos();
+
+    } catch (e) {
+      console.error(e);
+      alert('Failed to load memos or Firebase config.');
+    }
+  })();
+</script>
+
+<!-- Reserved Footer Space -->
+<div style="height: 2rem;"></div>
+
+<!-- Fixed Footer in Bottom-Right -->
+  <footer
+    id="footer"
+    class="w-full border-t border-[#504945] py-1 flex justify-end px-4"
+    style="font-family: Consolas, monospace; font-size: 10px; position: fixed; bottom: 0; right: 0; background-color: #282828; color: #ebdbb2; z-index: 50;"
+  >
+    Loading...
+  </footer>
+
+<script>
+  window.addEventListener('load', () => {
+    const footer = document.getElementById('footer');
+    const now = new Date();
+    const options = {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    };
+    const formattedTimestamp = now.toLocaleString('en-US', options);
+    footer.textContent = `Last updated: ${formattedTimestamp} · Public View`;
+  });
+</script>
+
+</body>
+</html>
